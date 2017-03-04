@@ -1,3 +1,5 @@
+import os
+
 import cv2
 import matplotlib.pyplot as plt
 
@@ -20,6 +22,7 @@ def compare_images(img1, img2, img1_label='Image 1', img2_label='Image 2'):
     plt.subplot(122), plt.imshow(img2, cmap='gray')
     plt.title(img2_label), plt.xticks([]), plt.yticks([])
 
-    mng = plt.get_current_fig_manager()
-    mng.window.state('zoomed')
+    if os.name == 'nt':
+        mng = plt.get_current_fig_manager()
+        mng.window.state('zoomed')
     plt.show()
