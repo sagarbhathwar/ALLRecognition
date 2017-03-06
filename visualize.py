@@ -22,7 +22,11 @@ def compare_images(img1, img2, img1_label='Image 1', img2_label='Image 2'):
     plt.subplot(122), plt.imshow(img2, cmap='gray')
     plt.title(img2_label), plt.xticks([]), plt.yticks([])
 
+    # Need some help in figuring out a generic function
+    # Which works on any platform on any backend
+    mng = plt.get_current_fig_manager() 
     if os.name == 'nt':
-        mng = plt.get_current_fig_manager()
         mng.window.state('zoomed')
+    elif os.name == 'posix':
+        mng.resize(*mng.window.maxsize())
     plt.show()

@@ -8,8 +8,8 @@ import pandas as pd
 # into a pandas dataframe for easier processing
 def read_data(img_path, xyc_path):
     # Read the names/paths of all necessary files
-    img_files = glob.glob(os.path.join(img_path, '*'))
-    xyc_files = glob.glob(os.path.join(xyc_path, '*'))
+    img_files = sorted(glob.glob(os.path.join(img_path, '*')))
+    xyc_files = sorted(glob.glob(os.path.join(xyc_path, '*')))
 
     row_list = []
     for i in range(len(xyc_files)):
