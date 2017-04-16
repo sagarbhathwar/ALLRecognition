@@ -5,3 +5,4 @@ __pycache__
 *.iml
 ALL_IDB1
 ALL_IDB2
+*.idea
