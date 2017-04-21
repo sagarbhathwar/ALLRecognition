@@ -43,9 +43,9 @@ def compare_images(img1, img2, img1_label='Image 1', img2_label='Image 2'):
     plt.show()
 
 
-def plot_histogram(img):
+def plot_histogram(img, bins=256, hist_range=(0, 255)):
     plt.subplot(121), plt.imshow(img, cmap='gray')
-    plt.subplot(122), plt.hist(img.ravel(), bins=256, range=(0,1), fc='k',
+    plt.subplot(122), plt.hist(img.ravel(), bins=bins, range=hist_range, fc='k',
                                ec='k')
     mng = plt.get_current_fig_manager()
     if os.name == 'nt':

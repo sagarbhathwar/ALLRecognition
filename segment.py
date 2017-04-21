@@ -1,29 +1,73 @@
 import cv2
 import numpy as np
-
-from skimage import img_as_uint
-from skimage.color import rgb2hed, rgb2gray
+from skimage import measure
 from skimage.exposure import rescale_intensity
 from skimage.filters import threshold_otsu
+from sklearn.mixture import GaussianMixture
+
+from visualize import compare_images
 
 
-def detect_edges(img, t_min=50, t_max=200):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    edge_img = cv2.Canny(gray, t_min, t_max)
-    return edge_img
+def fill_holes(img):
+    im = np.copy(img)
+    # Find contours in image. Retrieves all of the contours and organizes
+    # them into a two-level hierarchy. At the top level, there are external
+    # boundaries of the components. At the second level, there are boundaries
+    # of the holes. If there is another contour inside a hole of a connected
+    # component, it is still put at the top level.
+    _, contours, _ = cv2.findContours(im, cv2.RETR_CCOMP,
+                                      cv2.CHAIN_APPROX_SIMPLE)
+
+    # Using the obtained contours, fill in the contours. 'thickness=-1' does
+    # the filling
+    for contour in contours:
+        cv2.drawContours(im, contours=[contour], contourIdx=0, color=255,
+                         thickness=-1)
+
+    return im
 
 
-def get_mask(img):
-    hed = rgb2hed(img)
-    gray = img_as_uint(rgb2gray(hed))
-    smooth = cv2.GaussianBlur(np.array(gray, dtype=np.uint8), (13,13), 40)
-    val, thres = cv2.threshold(smooth, 50, 255,
-                               cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    kernel = np.ones((5,5), np.uint8)
-    blur = cv2.medianBlur(thres, 5)
-    opening = cv2.morphologyEx(blur, cv2.MORPH_OPEN, kernel=kernel,
-                               iterations=4)
-    return opening
+def remove_small_cells(img):
+    # Find unique connected components in the image and label each pixel as
+    # belonging to a particular connected component
+    # 0 will be the background
+    labels = measure.label(img, neighbors=4)
+
+    if len(np.unique(labels)) > 2000:
+        med = cv2.medianBlur(img, 5)
+        labels = measure.label(med)
+
+    # This image finally contains all cells other than those with area less
+    # than some specified threshold
+    small_cells_eleminated_img = np.zeros(img.shape, np.uint8)
+
+    # For each connected component, find number of pixels in it i.e. area of
+    # it. If it is less than 1/600 of the image, remove it
+    cell_size_threshold = int((img.shape[0] * img.shape[1]) / 1000)
+    for label in np.unique(labels)[1:]:
+        label_mask = np.zeros(img.shape, np.uint8)
+        label_mask[labels == label] = 255
+        num_fg_pixels = cv2.countNonZero(label_mask)
+        if num_fg_pixels > cell_size_threshold:
+            small_cells_eleminated_img = cv2.add(
+                small_cells_eleminated_img, label_mask)
+
+    return small_cells_eleminated_img
+
+
+def cluster(img):
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    L_star, a_star, b_star = cv2.split(lab)
+    a_b_star = np.array((a_star.ravel(), b_star.ravel()), np.uint8).transpose()
+
+    model = GaussianMixture(n_components=3, max_iter=20)
+
+    model.fit(a_b_star)
+    pred = model.predict(a_b_star)
+    pred = np.reshape(pred, (img.shape[:2]))
+    z = np.zeros(img.shape[:2], np.uint8)
+    z[pred == 1] = 255
+    return z
 
 
 def segment_leukocytes(img):
@@ -39,16 +83,25 @@ def segment_leukocytes(img):
     # contrast stretched so that OSTU tresholding method gives a find
     # threshold, separating background and foreground. We then invert the
     # background and foreground by subtracting the image by 1.0
-    blur = cv2.GaussianBlur(dbl, (161, 161), 40)
+    blur = cv2.GaussianBlur(dbl, (241, 241), 40)
     sub = np.subtract(dbl, blur)
     # Contrast stretching
     cs = rescale_intensity(sub,
                            in_range=(np.percentile(sub.ravel(), 1),
                                      np.percentile(sub.ravel(), 99)),
                            out_range=(0.0, 1.0))
+
+    """"""
+    compare_images(dbl, cs)
+
+    # cv2.imshow("Window", cs), cv2.waitKey(0), cv2.destroyAllWindows()
+
     thresh = threshold_otsu(cs)
     binary = cs > thresh
     binary = 1.0 - binary
+
+    """"""
+    compare_images(cs, binary)
 
     # Convert the image back to 0-255 range for futher processing. An open
     # operation is optional to disjoin cells.
@@ -56,8 +109,43 @@ def segment_leukocytes(img):
     # eleminated. But that joins cells, which is not ideal. So, it can be
     # deferred for now
     binary = np.array(np.multiply(binary, 255), np.uint8)
-    kernel = np.ones((3,3), np.uint8)
-    opening = cv2.morphologyEx(binary, op=cv2.MORPH_OPEN, kernel=kernel,
-                               iterations=2)
-    return opening
+    # cv2.imshow("Window", binary), cv2.waitKey(0), cv2.destroyAllWindows()
 
+    holes_filled = fill_holes(binary)
+
+    """"""
+    compare_images(binary, holes_filled)
+    # Calculate mean cell area. We sum up all the pixels in the image and
+    # divide it by 510 (255 * 2) i.e. half the mean cell area in terms of
+    # number of pixels
+    labels = measure.label(holes_filled, neighbors=4)
+    mean_cell_area = sum(holes_filled.ravel()) // len(
+        np.unique(labels))
+    threshold = mean_cell_area // 510
+
+    # Color based clustering using Gaussian Mixture Model
+    # Final image that contains only white blood cells
+    # 0 is BG, 1 is WBC and 2 is RBC
+    clustered_img = cluster(img)
+
+    """"""
+    compare_images(holes_filled, clustered_img)
+    final_image = np.zeros(binary.shape, np.uint8)
+
+    labels = measure.label(clustered_img)
+    print(len(np.unique(labels)))
+    for label in np.unique(labels)[1:]:
+        label_mask = np.zeros(clustered_img.shape, np.uint8)
+        label_mask[labels == label] = 255
+        num_white_pixels = cv2.countNonZero(label_mask)
+        if num_white_pixels > threshold:
+            final_image = cv2.add(final_image, label_mask)
+
+    final_image = np.bitwise_and(final_image, holes_filled)
+    small_cells_eliminated = remove_small_cells(final_image)
+    small_cells_eliminated = fill_holes(small_cells_eliminated)
+
+    """"""
+    compare_images(clustered_img, small_cells_eliminated)
+
+    return small_cells_eliminated
