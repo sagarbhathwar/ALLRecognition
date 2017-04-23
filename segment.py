@@ -57,16 +57,27 @@ def remove_small_cells(img):
 
 def cluster(img):
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+
+    # Split the three channels. We will need only a* and b* eventually for
+    # clustering
     L_star, a_star, b_star = cv2.split(lab)
+
+    # Combine only a_star and b_star color space for clustering purpose
     a_b_star = np.array((a_star.ravel(), b_star.ravel()), np.uint8).transpose()
 
+    # Using a Gaussian Mixture Model clustering method, cluster the points in
+    #  the image. Each pixel either belongs to background  (0),
+    # or White Blood Cell(1) ro Red Blood Cell(2)
     model = GaussianMixture(n_components=3, max_iter=20)
-
     model.fit(a_b_star)
     pred = model.predict(a_b_star)
+
+    # Reshae the predicted values into a matrix so that all pixels classified
+    #  as 1 can be used for generating mask
     pred = np.reshape(pred, (img.shape[:2]))
     z = np.zeros(img.shape[:2], np.uint8)
     z[pred == 1] = 255
+
     return z
 
 
@@ -112,6 +123,7 @@ def segment_leukocytes(img):
     # cv2.imshow("Window", binary), cv2.waitKey(0), cv2.destroyAllWindows()
 
     holes_filled = fill_holes(binary)
+    cv2.imwrite("holes_filled.jpg", holes_filled)
 
     """"""
     compare_images(binary, holes_filled)
@@ -141,6 +153,7 @@ def segment_leukocytes(img):
         if num_white_pixels > threshold:
             final_image = cv2.add(final_image, label_mask)
 
+    # Combine the results from the two methods to obtain a final mask
     final_image = np.bitwise_and(final_image, holes_filled)
     small_cells_eliminated = remove_small_cells(final_image)
     small_cells_eliminated = fill_holes(small_cells_eliminated)

@@ -14,8 +14,9 @@ if __name__ == "__main__":
     # co-ordinates of blasts if any: id, img_path, has_blasts, blast_xy
     df = read_data(IMG_PATH, XYC_PATH)
 
-    img = cv2.imread(df.loc[0].img_path)
+    for i in range(108):
+        img = cv2.imread(df.loc[i].img_path)
 
-    segmented_image = segment_leukocytes(img)
-    mark_cancerous_lymphocytes(img, df.loc[0].blast_xy)
-    compare_images(img, segmented_image)
+        segmented_image = segment_leukocytes(img)
+        mark_cancerous_lymphocytes(img, df.loc[i].blast_xy)
+        compare_images(img, segmented_image)
